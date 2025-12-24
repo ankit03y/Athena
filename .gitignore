@@ -1,0 +1,23 @@
+# Athena Agent - AI-Powered Infrastructure Automation
+
+## Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.env
+*.db
+.DS_Store
+
+## IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+## Build outputs
+dist/
+build/
+*.egg-info/
+
+## Logs
+*.log

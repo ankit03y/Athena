@@ -1,0 +1,353 @@
+# Business Requirements Document (BRD)
+
+## 1. Purpose
+
+The purpose of this document is to define the business, functional, and technical requirements for building an **AI-powered Infrastructure Automation Agent** that executes commands across distributed systems, validates results, generates reports, and raises incidents with minimal human effort.
+
+The goal is simple and blunt: **reduce operational toil, eliminate brittle scripts, and make automation scalable, explainable, and reusable**.
+
+---
+
+## 2. Background & Current State (As-Is)
+
+### 2.1 Current Day-to-Day Workflow
+
+The current workflow involves:
+
+* Connecting to remote servers using **SSH**
+* Supporting variable access paths:
+
+  * SSH → Node
+  * SSH → Jump Host → Node
+  * SSH → Jump Host → Node → Cluster IPs
+* Executing one or more commands per node
+* Capturing raw command output (often very large)
+* Writing **custom parsers** (Groovy / Python)
+* Evaluating results as **OK / NOK** based on rules
+* Generating **CSV / Excel reports**
+* Sending reports to stakeholders
+* Creating **incident tickets** when NOK conditions are met
+
+### 2.2 Pain Points
+
+* Outputs can exceed **10,000 lines**, making parsing fragile
+* Minor output changes break parsers
+* Logic is duplicated across environments
+* Onboarding new use cases is slow
+* Scripts are hard to audit and explain
+* Manual effort increases with scale (50–100+ nodes)
+
+In short: automation exists, but it is **not intelligent, scalable, or reusable**.
+
+---
+
+## 3. Problem Statement
+
+The existing automation approach is:
+
+* Script-heavy
+* Hard to maintain
+* Difficult to scale
+* Error-prone when outputs change
+
+There is no centralized system that combines **deterministic execution** with **intelligent reasoning** while remaining secure, explainable, and enterprise-ready.
+
+---
+
+## 4. Proposed Solution (To-Be)
+
+Build an **AI Automation Agent Platform** that:
+
+* Executes commands deterministically
+* Sanitizes and reduces large outputs
+* Converts raw data into semantic signals
+* Uses LLMs only for reasoning and explanation
+* Provides a modern GUI for automation lifecycle management
+* Supports scheduling, RBAC, reporting, and analytics
+
+This is not a chatbot. This is an **automation platform with an AI reasoning layer**.
+
+---
+
+## 5. In-Scope Requirements
+
+> **Core Design Principle**
+> Large raw outputs must NEVER be sent directly to the LLM. All outputs must pass through deterministic sanitization and reduction before AI processing.
+
+---
+
+### 5.1 Connection Management
+
+* Support multiple SSH topologies:
+
+  * Direct SSH
+  * SSH → Jump Host → Node
+  * SSH → Jump Host → Node → Cluster IP
+* Support password and key-based authentication
+* Retry, timeout, and failure handling
+* Session reuse where applicable
+
+---
+
+### 5.2 Command Execution
+
+* Support single and multi-line commands
+* Support universal commands and per-node commands
+* Capture:
+
+  * STDOUT
+  * STDERR
+  * Exit codes
+* Tag outputs with execution metadata (host, node, cluster, timestamp)
+
+---
+
+### 5.3 Deterministic Parsing & Reduction
+
+* Perform first-pass parsing using code (not AI)
+* Techniques include:
+
+  * Regex matching
+  * Threshold checks
+  * Counters and aggregations
+  * Context window extraction
+* Extract only relevant metrics and states
+
+---
+
+### 5.4 Output Sanitization & Signal Encoding
+
+To handle large outputs efficiently, the platform must implement a **Sanitization & Signal Encoding Layer**.
+
+#### 5.4.1 Sanitization Rules
+
+* Raw output may exceed 10,000 lines
+* Only relevant information is retained
+* Noise is discarded deterministically
+
+#### 5.4.2 Symbolic Signal Language (Domain-Specific)
+
+Raw outputs are converted into compact semantic signals.
+
+Examples:
+
+```
+DISK_ROOT_GT_90
+MEM_SWAP_USED
+CPU_LOAD_HIGH
+PROC_ZOMBIE_FOUND
+```
+
+These signals replace thousands of lines of logs.
+
+#### 5.4.3 Signal Payload Structure
+
+```
+{
+  "signals": ["DISK_ROOT_GT_90", "MEM_SWAP_USED"],
+  "metrics": {
+    "disk_root_used_pct": 91,
+    "swap_used_mb": 512
+  }
+}
+```
+
+This ensures low token usage, determinism, and auditability.
+
+---
+
+### 5.5 AI-Assisted Reasoning
+
+* LLM operates ONLY on sanitized signals and metrics
+* Responsibilities:
+
+  * Correlate signals
+  * Classify severity
+  * Generate explanations
+  * Create incident summaries
+* LLM must not perform raw parsing
+
+---
+
+### 5.6 Reporting
+
+* Generate reports in:
+
+  * CSV
+  * Excel
+* Include:
+
+  * Node details
+  * Command results
+  * OK / NOK status
+  * Reasons and evidence
+
+---
+
+### 5.7 User Interface (GUI)
+
+The GUI is a **core requirement**.
+
+#### 5.7.1 Automation & Runbook Management
+
+* Guided UI for:
+
+  * Server configuration
+  * Command input
+  * Rules and thresholds
+* Automations appear in a **persistent left-side list** (saved like chats)
+* Users can reopen, edit, and re-run automations
+
+#### 5.7.2 Bulk Import (CSV / Excel)
+
+* Import 10–100+ nodes via CSV or Excel
+* Import fields:
+
+  * Host / IP
+  * Username
+  * Auth type
+  * Credential reference
+  * Jump host mapping
+  * Optional per-node commands
+* Preview before save
+* Imported nodes appear in editable grid
+
+#### 5.7.3 Rule Editing
+
+* Rules editable post-creation
+* Versioned rule changes
+* Dry-run rules against historical outputs
+
+#### 5.7.4 Scheduling & Job Management
+
+* Built-in scheduler
+* Support:
+
+  * One-time
+  * Cron-based schedules
+* UI shows last run, next run, and failures
+
+#### 5.7.5 Role-Based Access Control (RBAC)
+
+* User:
+
+  * Sees only own automations and data
+* Admin:
+
+  * Sees all automations and users
+
+#### 5.7.6 Data Visualization & Analytics
+
+* Grid view for results
+* Advanced graphs:
+
+  * OK vs NOK trends
+  * Resource utilization
+  * Failure frequency
+
+#### 5.7.7 Historical Data & Export
+
+* Minimum **6 months** data retention
+* Download historical reports by date range
+
+---
+
+## 6. Out of Scope
+
+* Autonomous remediation (future phase)
+* Direct production changes without approval
+
+---
+
+## 7. Non-Functional Requirements
+
+### Security
+
+* Encrypted secret storage
+* No plaintext credentials
+* RBAC enforcement
+
+### Performance
+
+* Parallel execution
+* Scalable to large node counts
+
+### Reliability
+
+* Graceful partial failures
+* Resume long executions
+
+### Explainability
+
+* Every NOK must be explainable
+* Raw outputs retained for audit
+
+---
+
+## 8. Technology Stack (Proposed)
+
+### Frontend
+
+* React + TypeScript
+* Tailwind / shadcn-ui
+* Recharts / ECharts
+* SheetJS (CSV / Excel import)
+
+### Backend
+
+* Python (FastAPI)
+* REST + WebSocket APIs
+
+### Execution Engine
+
+* Paramiko / AsyncSSH
+* Parallel execution support
+
+### AI / Agent Layer
+
+* Primary LLM: Grok
+* Fallback LLM: Local (LLaMA / Mistral via Ollama)
+* Agent orchestration:
+
+  * Google ADK
+  * MCP
+  * fastMCP
+
+### Scheduler
+
+* APScheduler / Celery Beat
+
+### Storage
+
+* PostgreSQL (metadata, history)
+* Object storage (raw outputs, reports)
+
+### Security & Observability
+
+* Vault / KMS
+* JWT + RBAC
+* OpenTelemetry
+
+---
+
+## 9. Success Metrics
+
+* Reduced parser maintenance
+* Faster report generation
+* Lower false-positive incidents
+* Reusability across environments
+
+---
+
+## 10. Future Enhancements
+
+* Auto-remediation
+* Pattern learning
+* Recommendation engine
+* Knowledge graph of failures
+
+---
+
+## 11. Summary
+
+This platform shifts automation from **script-driven execution** to **intent-driven intelligence**, combining deterministic control with AI reasoning—without sacrificing scale, security, or explainability.
