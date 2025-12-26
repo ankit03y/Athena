@@ -23,9 +23,25 @@ export function ServerTable({ servers, onAdd, onBulkAdd, onRemove }: ServerTable
         credential: '',
         node_name: '',
     });
+    const [validationError, setValidationError] = useState<string | null>(null);
 
     const handleAdd = () => {
-        if (!newServer.hostname || !newServer.username || !newServer.credential) return;
+        // Validate required fields
+        if (!newServer.hostname) {
+            setValidationError('Hostname is required');
+            return;
+        }
+        if (!newServer.username) {
+            setValidationError('Username is required');
+            return;
+        }
+        if (!newServer.credential) {
+            setValidationError('Password/Key is required');
+            return;
+        }
+
+        setValidationError(null);
+        console.log('Adding server:', newServer);
         onAdd(newServer);
         setNewServer({
             hostname: '',
@@ -178,7 +194,7 @@ export function ServerTable({ servers, onAdd, onBulkAdd, onRemove }: ServerTable
                     </thead>
                     <tbody className="divide-y divide-slate-700/30">
                         {servers.map((server) => (
-                            <tr key={server.id} className="hover:bg-slate-800/30 transition-colors">
+                            <tr key={server.id} className="hover:bg-slate-800/30 transition-colors group">
                                 <td className="px-4 py-3">
                                     <span className="text-sm font-mono text-slate-200">{server.hostname}</span>
                                 </td>
@@ -190,8 +206,8 @@ export function ServerTable({ servers, onAdd, onBulkAdd, onRemove }: ServerTable
                                 </td>
                                 <td className="px-4 py-3">
                                     <span className={`text-xs px-2 py-0.5 rounded-full ${server.auth_type === 'private_key'
-                                            ? 'bg-green-500/10 text-green-400'
-                                            : 'bg-amber-500/10 text-amber-400'
+                                        ? 'bg-green-500/10 text-green-400'
+                                        : 'bg-amber-500/10 text-amber-400'
                                         }`}>
                                         {server.auth_type === 'private_key' ? 'Key' : 'Pwd'}
                                     </span>
@@ -200,12 +216,31 @@ export function ServerTable({ servers, onAdd, onBulkAdd, onRemove }: ServerTable
                                     <span className="text-sm text-slate-400">{server.port}</span>
                                 </td>
                                 <td className="px-4 py-3 text-right">
-                                    <button
-                                        onClick={() => onRemove(server.id)}
-                                        className="p-1.5 rounded-md hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
+                                    <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={() => {
+                                                // Delete and re-add for editing (simplified approach)
+                                                const confirmEdit = window.confirm(`To edit "${server.hostname}", delete this entry and add a new one with the correct details. Delete now?`);
+                                                if (confirmEdit) {
+                                                    onRemove(server.id);
+                                                    setIsAdding(true);
+                                                }
+                                            }}
+                                            className="p-1.5 rounded-md hover:bg-blue-500/10 text-slate-400 hover:text-blue-400 transition-colors"
+                                            title="Edit server"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            onClick={() => onRemove(server.id)}
+                                            className="p-1.5 rounded-md hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors"
+                                            title="Delete server"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -270,15 +305,15 @@ export function ServerTable({ servers, onAdd, onBulkAdd, onRemove }: ServerTable
                                     <td colSpan={6} className="px-4 py-2">
                                         <div className="flex items-center gap-3">
                                             <span className="text-sm text-slate-400 shrink-0">
-                                                {newServer.auth_type === 'private_key' ? 'Private Key:' : 'Password:'}
+                                                {newServer.auth_type === 'private_key' ? 'Private Key:' : 'Password:'} <span className="text-red-400">*</span>
                                             </span>
                                             <div className="flex-1 relative">
                                                 <input
                                                     type={showCredential ? 'text' : 'password'}
                                                     placeholder={newServer.auth_type === 'private_key' ? 'Paste private key...' : 'Enter password...'}
                                                     value={newServer.credential}
-                                                    onChange={(e) => setNewServer({ ...newServer, credential: e.target.value })}
-                                                    className="input-field w-full text-sm pr-10"
+                                                    onChange={(e) => { setNewServer({ ...newServer, credential: e.target.value }); setValidationError(null); }}
+                                                    className={`input-field w-full text-sm pr-10 ${validationError?.includes('Password') ? 'border-red-500' : ''}`}
                                                 />
                                                 <button
                                                     type="button"
@@ -289,6 +324,11 @@ export function ServerTable({ servers, onAdd, onBulkAdd, onRemove }: ServerTable
                                                 </button>
                                             </div>
                                         </div>
+                                        {validationError && (
+                                            <div className="mt-2 text-sm text-red-400 flex items-center gap-1">
+                                                ⚠️ {validationError}
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             </>

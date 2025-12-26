@@ -86,6 +86,54 @@ class SSHExecutor:
             }
 
 
+def execute_command_on_server(
+    hostname: str, 
+    username: str, 
+    credential: str, 
+    command: str, 
+    port: int = 22,
+    auth_type: str = "private_key"
+) -> dict:
+    """
+    Synchronous wrapper to execute command on a server.
+    Used by chat API for simple execution.
+    """
+    async def _run():
+        try:
+            connect_options = {
+                "host": hostname,
+                "port": port,
+                "username": username,
+                "known_hosts": None,
+            }
+            
+            if auth_type == "password":
+                connect_options["password"] = credential
+            else:
+                connect_options["client_keys"] = [asyncssh.import_private_key(credential)]
+            
+            async with await asyncssh.connect(**connect_options) as conn:
+                result = await asyncio.wait_for(
+                    conn.run(command, check=False),
+                    timeout=60
+                )
+                return {
+                    "status": "SUCCESS" if result.exit_status == 0 else "FAILED",
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "exit_code": result.exit_status,
+                }
+        except Exception as e:
+            return {
+                "status": "FAILED",
+                "stdout": "",
+                "stderr": str(e),
+                "exit_code": -1,
+            }
+    
+    return asyncio.get_event_loop().run_until_complete(_run())
+
+
 async def execute_on_server(server: Server, command: str) -> dict:
     """Execute a command on a single server"""
     executor = SSHExecutor(server)

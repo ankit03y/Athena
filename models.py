@@ -179,8 +179,9 @@ class ExecutionResult(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     execution_id: int = Field(foreign_key="execution.id")
-    server_id: int = Field(foreign_key="server.id")
+    server_id: Optional[int] = Field(default=None, foreign_key="server.id")  # Nullable to allow server deletion
     command_id: Optional[int] = Field(default=None, foreign_key="command.id")
+    hostname: str = ""  # Store hostname directly so it persists after server deletion
     
     # Results
     status: ExecutionStatus = ExecutionStatus.PENDING
@@ -197,7 +198,7 @@ class ExecutionResult(SQLModel, table=True):
     
     # Relationships
     execution: Execution = Relationship(back_populates="results")
-    server: Server = Relationship(back_populates="execution_results")
+    server: Optional[Server] = Relationship(back_populates="execution_results")
 
 
 class ExecutionResultRead(SQLModel):

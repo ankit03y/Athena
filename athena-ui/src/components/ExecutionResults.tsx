@@ -161,17 +161,17 @@ export function ExecutionResults({ executionId, onClose }: ExecutionResultsProps
                                                 <div
                                                     key={idx}
                                                     className={`p-3 rounded-lg ${resource.status === 'OK' ? 'bg-green-500/5 border border-green-500/20' :
-                                                            resource.status === 'WARNING' ? 'bg-amber-500/5 border border-amber-500/20' :
-                                                                resource.status === 'CRITICAL' ? 'bg-red-500/5 border border-red-500/20' :
-                                                                    'bg-slate-500/5 border border-slate-500/20'
+                                                        resource.status === 'WARNING' ? 'bg-amber-500/5 border border-amber-500/20' :
+                                                            resource.status === 'CRITICAL' ? 'bg-red-500/5 border border-red-500/20' :
+                                                                'bg-slate-500/5 border border-slate-500/20'
                                                         }`}
                                                 >
                                                     <div className="flex items-center justify-between">
                                                         <span className="font-medium text-slate-200">{resource.name}</span>
                                                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${resource.status === 'OK' ? 'bg-green-500/10 text-green-400' :
-                                                                resource.status === 'WARNING' ? 'bg-amber-500/10 text-amber-400' :
-                                                                    resource.status === 'CRITICAL' ? 'bg-red-500/10 text-red-400' :
-                                                                        'bg-slate-500/10 text-slate-400'
+                                                            resource.status === 'WARNING' ? 'bg-amber-500/10 text-amber-400' :
+                                                                resource.status === 'CRITICAL' ? 'bg-red-500/10 text-red-400' :
+                                                                    'bg-slate-500/10 text-slate-400'
                                                             }`}>
                                                             {resource.status}
                                                         </span>
@@ -217,14 +217,35 @@ export function ExecutionResults({ executionId, onClose }: ExecutionResultsProps
                 ))}
 
                 {execution.results.length === 0 && (
-                    <div className="p-8 text-center text-slate-500">
+                    <div className="p-4">
                         {execution.status === 'running' || execution.status === 'pending' ? (
-                            <>
-                                <RefreshCw className="w-8 h-8 mx-auto mb-3 animate-spin" />
-                                <p>Execution in progress...</p>
-                            </>
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-3">
+                                    <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />
+                                    <span className="text-slate-300 font-medium">Execution in progress...</span>
+                                </div>
+
+                                {/* Live Console */}
+                                <div className="bg-black/70 rounded-lg p-4 font-mono text-sm">
+                                    <div className="flex items-center gap-2 text-slate-400 mb-3 border-b border-slate-700 pb-2">
+                                        <Terminal className="w-4 h-4" />
+                                        <span>Live Console</span>
+                                    </div>
+                                    <div className="space-y-1 text-xs">
+                                        <div className="text-green-400">$ Initializing execution...</div>
+                                        <div className="text-blue-400">→ Connecting to servers...</div>
+                                        <div className="text-slate-400">→ Running commands on all targets...</div>
+                                        <div className="text-amber-400 animate-pulse">⏳ Waiting for responses...</div>
+                                    </div>
+                                </div>
+
+                                <p className="text-xs text-slate-500">
+                                    Results will appear automatically when execution completes.
+                                    Polling every 2 seconds...
+                                </p>
+                            </div>
                         ) : (
-                            <p>No results available</p>
+                            <p className="text-center text-slate-500 py-4">No results available</p>
                         )}
                     </div>
                 )}

@@ -1,149 +1,130 @@
-import { useState } from 'react';
-import { Plus, Book, Clock, Trash2, MoreVertical } from 'lucide-react';
-import type { Runbook } from '../types';
+import React, { useEffect, useState } from 'react';
 
-interface SidebarProps {
-    runbooks: Runbook[];
-    selectedId: number | null;
-    onSelect: (id: number) => void;
-    onCreate: () => void;
-    onDelete: (id: number) => void;
+interface Session {
+    id: number;
+    title: string;
+    created_at: string;
 }
 
-export function Sidebar({ runbooks, selectedId, onSelect, onCreate, onDelete }: SidebarProps) {
-    const [menuOpen, setMenuOpen] = useState<number | null>(null);
+interface SidebarProps {
+    onSelectSession: (id: number | null) => void;
+    currentSessionId: number | null;
+    currentView?: 'chat' | 'history';
+    onSelectView?: (view: 'chat' | 'history') => void;
+}
 
-    const formatDate = (dateStr: string) => {
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const Sidebar: React.FC<SidebarProps> = ({ onSelectSession, currentSessionId, currentView, onSelectView }) => {
+    const [sessions, setSessions] = useState<Session[]>([]);
+    const [deletingId, setDeletingId] = useState<number | null>(null);
+
+    useEffect(() => {
+        fetchSessions();
+    }, [currentSessionId]); // Refetch when session changes (e.g. new session created)
+
+    const fetchSessions = async () => {
+        try {
+            const res = await fetch('http://localhost:8000/chat/sessions');
+            if (res.ok) {
+                const data = await res.json();
+                setSessions(data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch sessions", error);
+        }
+    };
+
+    const handleDeleteSession = async (sessionId: number, e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent selecting the session
+        if (!window.confirm('Are you sure you want to delete this chat thread?')) {
+            return;
+        }
+        setDeletingId(sessionId);
+        try {
+            const res = await fetch(`http://localhost:8000/chat/sessions/${sessionId}`, {
+                method: 'DELETE'
+            });
+            if (res.ok) {
+                // If we deleted the current session, clear selection
+                if (currentSessionId === sessionId) {
+                    onSelectSession(null);
+                }
+                fetchSessions();
+            }
+        } catch (error) {
+            console.error("Failed to delete session", error);
+        } finally {
+            setDeletingId(null);
+        }
     };
 
     return (
-        <aside className="w-80 h-screen bg-slate-900 border-r border-slate-800 flex flex-col">
-            {/* Header */}
-            <div className="p-5 border-b border-slate-800">
-                <div className="flex items-center gap-3 mb-5">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                        <Book className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                        <h1 className="text-xl font-bold text-white tracking-tight">Athena</h1>
-                        <p className="text-xs text-slate-500">Automation Agent</p>
-                    </div>
-                </div>
+        <div className="d-flex flex-column flex-shrink-0 p-3 text-white bg-dark" style={{ width: '100%', height: '100%', borderRight: '1px solid #333', overflow: 'hidden' }}>
+            <a href="/" className="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
+                <i className="bi bi-robot fs-4 me-2"></i>
+                <span className="fs-4">Athena Agent</span>
+            </a>
+            <hr />
+            <button
+                className="btn btn-primary w-100 mb-2"
+                onClick={() => {
+                    onSelectSession(null);
+                    onSelectView?.('chat');
+                }}
+            >
+                <i className="bi bi-plus-lg me-2"></i>
+                New Chat
+            </button>
+            <button
+                className={`btn w-100 mb-3 ${currentView === 'history' ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                onClick={() => onSelectView?.('history')}
+            >
+                <i className="bi bi-grid-3x3 me-2"></i>
+                Dashboard
+            </button>
 
-                <button
-                    onClick={onCreate}
-                    className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white py-2.5 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-500/20"
-                >
-                    <Plus className="w-5 h-5" />
-                    New Runbook
-                </button>
-            </div>
-
-            {/* Section Label */}
-            <div className="px-5 py-3">
-                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    Your Runbooks
-                </span>
-            </div>
-
-            {/* Runbook List */}
-            <div className="flex-1 overflow-y-auto px-3">
-                {runbooks.length === 0 ? (
-                    <div className="text-center py-12 px-4">
-                        <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-slate-800 flex items-center justify-center">
-                            <Book className="w-6 h-6 text-slate-600" />
-                        </div>
-                        <p className="text-sm text-slate-500">No runbooks yet</p>
-                        <p className="text-xs text-slate-600 mt-1">Create your first runbook to get started</p>
-                    </div>
-                ) : (
-                    <div className="space-y-2">
-                        {runbooks.map((runbook) => (
-                            <div
-                                key={runbook.id}
-                                className={`group relative rounded-xl cursor-pointer transition-all ${selectedId === runbook.id
-                                        ? 'bg-gradient-to-r from-blue-600/20 to-purple-600/10 border border-blue-500/30'
-                                        : 'hover:bg-slate-800/50 border border-transparent'
-                                    }`}
-                                onClick={() => onSelect(runbook.id)}
-                            >
-                                <div className="p-3.5">
-                                    {/* Title row */}
-                                    <div className="flex items-start justify-between mb-2">
-                                        <h3 className={`text-sm font-medium pr-6 ${selectedId === runbook.id ? 'text-white' : 'text-slate-200'
-                                            }`}>
-                                            {runbook.name}
-                                        </h3>
-
-                                        {/* Menu button */}
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setMenuOpen(menuOpen === runbook.id ? null : runbook.id);
-                                            }}
-                                            className="absolute right-2 top-3 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-slate-700 text-slate-400 transition-all"
-                                        >
-                                            <MoreVertical className="w-4 h-4" />
-                                        </button>
-
-                                        {/* Dropdown menu */}
-                                        {menuOpen === runbook.id && (
-                                            <div className="absolute right-2 top-9 z-10 bg-slate-800 rounded-lg shadow-xl border border-slate-700 py-1 min-w-[120px]">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onDelete(runbook.id);
-                                                        setMenuOpen(null);
-                                                    }}
-                                                    className="w-full px-3 py-1.5 text-left text-sm text-red-400 hover:bg-slate-700 flex items-center gap-2"
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                    Delete
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Stats row */}
-                                    <div className="flex items-center gap-3 text-xs">
-                                        <span className="text-slate-500">
-                                            {runbook.server_count} {runbook.server_count === 1 ? 'server' : 'servers'}
-                                        </span>
-                                        <span className="text-slate-600">•</span>
-                                        <span className="text-slate-500">
-                                            {runbook.command_count} {runbook.command_count === 1 ? 'cmd' : 'cmds'}
-                                        </span>
-                                        {runbook.is_scheduled && (
-                                            <>
-                                                <span className="text-slate-600">•</span>
-                                                <span className="flex items-center gap-1 text-amber-400">
-                                                    <Clock className="w-3 h-3" />
-                                                    Scheduled
-                                                </span>
-                                            </>
-                                        )}
-                                    </div>
-
-                                    {/* Date */}
-                                    <div className="mt-2 text-xs text-slate-600">
-                                        {formatDate(runbook.updated_at)}
-                                    </div>
-                                </div>
+            <div className="list-group list-group-flush overflow-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+                {sessions.map(session => (
+                    <div
+                        key={session.id}
+                        className={`list-group-item list-group-item-action py-3 lh-sm d-flex justify-content-between align-items-start ${currentSessionId === session.id ? 'active' : 'bg-dark text-white border-bottom-0'}`}
+                        onClick={() => {
+                            onSelectSession(session.id);
+                            onSelectView?.('chat');
+                        }}
+                        style={currentSessionId === session.id ? { cursor: 'pointer' } : { borderColor: '#444', cursor: 'pointer' }}
+                    >
+                        <div className="flex-grow-1 overflow-hidden">
+                            <strong className="mb-1 text-truncate d-block">{session.title}</strong>
+                            <div className="small opacity-50">
+                                {new Date(session.created_at).toLocaleDateString()}
                             </div>
-                        ))}
+                        </div>
+                        <button
+                            className={`btn btn-sm ${currentSessionId === session.id ? 'btn-outline-light' : 'btn-outline-danger'} ms-2`}
+                            onClick={(e) => handleDeleteSession(session.id, e)}
+                            disabled={deletingId === session.id}
+                            title="Delete chat"
+                        >
+                            {deletingId === session.id ? (
+                                <span className="spinner-border spinner-border-sm" role="status"></span>
+                            ) : (
+                                <i className="bi bi-trash"></i>
+                            )}
+                        </button>
                     </div>
-                )}
+                ))}
             </div>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-slate-800">
-                <div className="flex items-center justify-between text-xs text-slate-600">
-                    <span>Athena Agent v2.0</span>
-                    <span>{runbooks.length} runbooks</span>
+            <div className="mt-auto">
+                <hr />
+                <div className="d-flex align-items-center text-white text-decoration-none" >
+                    <img src="https://github.com/mdo.png" alt="" width="32" height="32" className="rounded-circle me-2" />
+                    <strong>User</strong>
                 </div>
             </div>
-        </aside>
+        </div>
     );
-}
+};
+
+export default Sidebar;
+
