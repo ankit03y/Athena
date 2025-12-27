@@ -152,10 +152,29 @@ async def delete_session(session_id: int):
         for msg in messages:
             session.delete(msg)
         
-        # Delete associated rules
+        # Get associated rules
         rules = session.exec(
             select(AutomationRule).where(AutomationRule.session_id == session_id)
         ).all()
+        
+        # Delete RuleExecution and Incident records for each rule first
+        # (they have NOT NULL foreign keys to automation_rule)
+        for rule in rules:
+            # Delete executions
+            executions = session.exec(
+                select(RuleExecution).where(RuleExecution.rule_id == rule.id)
+            ).all()
+            for execution in executions:
+                session.delete(execution)
+            
+            # Delete incidents
+            incidents = session.exec(
+                select(Incident).where(Incident.rule_id == rule.id)
+            ).all()
+            for incident in incidents:
+                session.delete(incident)
+        
+        # Now delete the rules themselves
         for rule in rules:
             session.delete(rule)
         
@@ -167,6 +186,25 @@ async def delete_session(session_id: int):
             return {"status": "deleted", "session_id": session_id}
         else:
             raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.patch("/sessions/{session_id}")
+async def rename_session(session_id: int, data: dict):
+    """Rename a chat session"""
+    with get_sync_session() as session:
+        chat_session = session.get(ChatSession, session_id)
+        if not chat_session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        new_title = data.get("title", "").strip()
+        if not new_title:
+            raise HTTPException(status_code=400, detail="Title cannot be empty")
+        
+        chat_session.title = new_title
+        session.add(chat_session)
+        session.commit()
+        
+        return {"status": "renamed", "session_id": session_id, "title": new_title}
 
 
 @router.post("/upload-nodes")
@@ -282,20 +320,44 @@ async def get_report(rule_id: int, format: str = "json"):
         # Each row: Nodename, Nodetype, Nodeip, Command, Deviationstatus, Deviationremarks, Executionstatus, Executionremarks, Parserresult
         report_rows = []
         
-        # Parse timeline to extract results per command
-        # Timeline structure: "Running command: X" -> "Output received" -> "Analyzing..." -> "✓ All clear" or "⚠️ Condition met"
+        # Parse timeline to extract results per node and per command
+        # First, track which nodes failed to connect
+        node_errors = {}  # node_name -> error details
+        
+        # Track command-level results per node
+        # Key: (node_name, command) -> result
         command_results = {}
+        current_node = None
         current_cmd = None
         
         for event in timeline:
             event_msg = event.get('message', '')
             event_status = event.get('status', '')
             event_type = event.get('type', '')
+            event_node = event.get('node', '')
             
-            # Detect command start
+            # Detect node connection start
+            if 'Connecting to' in event_msg:
+                # Extract node name from "Connecting to NodeName..."
+                parts = event_msg.replace('Connecting to', '').replace('...', '').strip()
+                current_node = parts
+            
+            # Detect node-level errors (connection failures)
+            if event_type == 'node_error':
+                failed_node = event.get('node', current_node or 'Unknown')
+                error_details = event.get('error_details', {})
+                node_errors[failed_node] = {
+                    "error_type": error_details.get('error_type', 'unknown_error'),
+                    "reason": error_details.get('reason', error_details.get('raw_error', event_msg)),
+                    "raw_error": error_details.get('raw_error', event_msg)
+                }
+            
+            # Detect command start - extract node name if present
             if 'Running command:' in event_msg:
                 current_cmd = event_msg.replace('Running command:', '').strip()
-                command_results[current_cmd] = {
+                # Initialize result for this node+command
+                key = (current_node or 'Unknown', current_cmd)
+                command_results[key] = {
                     "executed": True,
                     "status": "OK",
                     "remarks": "-"
@@ -303,58 +365,86 @@ async def get_report(rule_id: int, format: str = "json"):
             
             # Detect condition met (NOK case)
             elif current_cmd and ('⚠️' in event_msg or 'Condition met' in event_msg or event_status == 'warning'):
-                command_results[current_cmd]["status"] = "NOK"
-                # Extract the remarks after "Condition met:"
-                if 'Condition met:' in event_msg:
-                    remarks = event_msg.split('Condition met:')[-1].strip()
-                else:
-                    remarks = event_msg.replace('⚠️', '').strip()
-                command_results[current_cmd]["remarks"] = remarks
+                key = (current_node or 'Unknown', current_cmd)
+                if key in command_results:
+                    command_results[key]["status"] = "NOK"
+                    if 'Condition met:' in event_msg:
+                        remarks = event_msg.split('Condition met:')[-1].strip()
+                    else:
+                        remarks = event_msg.replace('⚠️', '').strip()
+                    command_results[key]["remarks"] = remarks
             
             # Detect success (OK case)
             elif current_cmd and ('✓' in event_msg or 'All clear' in event_msg):
-                if command_results[current_cmd]["status"] != "NOK":  # Don't override NOK
-                    command_results[current_cmd]["status"] = "OK"
+                key = (current_node or 'Unknown', current_cmd)
+                if key in command_results and command_results[key]["status"] != "NOK":
+                    command_results[key]["status"] = "OK"
                     remarks = event_msg.replace('✓', '').replace('All clear:', '').strip()
-                    command_results[current_cmd]["remarks"] = remarks if remarks else "Success"
+                    command_results[key]["remarks"] = remarks if remarks else "Success"
             
             # Detect incident type events
             elif event_type == 'incident':
                 incident_msg = event.get('details', {}).get('summary', event_msg)
-                # Try to associate with current command
-                if current_cmd:
-                    command_results[current_cmd]["status"] = "NOK"
-                    command_results[current_cmd]["remarks"] = incident_msg[:200]
+                key = (current_node or 'Unknown', current_cmd) if current_cmd else None
+                if key and key in command_results:
+                    command_results[key]["status"] = "NOK"
+                    command_results[key]["remarks"] = incident_msg[:200]
         
         # Now build report rows for each node + command combination
         for node in nodes:
             node_name = node.get('name', 'Unknown')
-            node_type = node.get('auth', {}).get('type', 'SSH').upper()
+            # Determine node type - use auth.type if available, else "SSH_KEY" or "SSH"
+            auth_type = node.get('auth', {}).get('type', '')
+            if auth_type == 'password':
+                node_type = 'PASSWORD'
+            elif auth_type == 'private_key' or auth_type == 'auto':
+                node_type = 'SSH_KEY'
+            else:
+                node_type = 'SSH'
             node_ip = node.get('hostname', 'N/A')
+            
+            # Check if this node failed to connect
+            node_failed = node_name in node_errors
             
             for cmd in commands:
                 cmd_text = cmd.get('cmd', 'N/A')
                 cmd_logic = cmd.get('logic', '')
                 
-                # Find matching result from timeline
-                result = command_results.get(cmd_text, {})
-                
-                deviation_status = result.get("status", "OK")
-                deviation_remarks = result.get("remarks", "-")
-                execution_status = "Executed" if result.get("executed") else "-"
-                parser_result = f"Logic: {cmd_logic}" if cmd_logic and deviation_status == "NOK" else "-"
-                
-                report_rows.append({
-                    "Nodename": node_name,
-                    "Nodetype": node_type,
-                    "Nodeip": node_ip,
-                    "Command": cmd_text,
-                    "Deviationstatus": deviation_status,
-                    "Deviationremarks": deviation_remarks,
-                    "Executionstatus": execution_status,
-                    "Executionremarks": "-",
-                    "Parserresult": parser_result
-                })
+                if node_failed:
+                    # Node failed to connect - report the error
+                    error_info = node_errors[node_name]
+                    report_rows.append({
+                        "Nodename": node_name,
+                        "Nodetype": node_type,
+                        "Nodeip": node_ip,
+                        "Command": cmd_text,
+                        "Deviationstatus": "NOK",
+                        "Deviationremarks": error_info.get('reason', 'Connection failed'),
+                        "Executionstatus": "Failed",
+                        "Executionremarks": error_info.get('raw_error', 'Connection error'),
+                        "Parserresult": "-"
+                    })
+                else:
+                    # Node connected - find matching result from timeline
+                    key = (node_name, cmd_text)
+                    result = command_results.get(key, {})
+                    
+                    deviation_status = result.get("status", "OK")
+                    deviation_remarks = result.get("remarks", "-")
+                    execution_status = "Executed" if result.get("executed") else "-"
+                    parser_result = f"Logic: {cmd_logic}" if cmd_logic and deviation_status == "NOK" else "-"
+                    
+                    report_rows.append({
+                        "Nodename": node_name,
+                        "Nodetype": node_type,
+                        "Nodeip": node_ip,
+                        "Command": cmd_text,
+                        "Deviationstatus": deviation_status,
+                        "Deviationremarks": deviation_remarks,
+                        "Executionstatus": execution_status,
+                        "Executionremarks": "-",
+                        "Parserresult": parser_result
+                    })
         
         # Build full report data
         report_data = {
@@ -769,8 +859,60 @@ async def stream_execution(execution_id: int):
                                     "status": "success"
                                 })
 
+
                 except Exception as e:
-                    await queue.put({"type": "error", "message": generate_execution_narrative('failed', {'error': str(e), 'node': node_name})})
+                    # Classify the error for better LLM analysis and reporting
+                    error_str = str(e).lower()
+                    error_type = "unknown_error"
+                    error_details = {
+                        "node": node_name,
+                        "hostname": hostname,
+                        "username": username,
+                        "raw_error": str(e)
+                    }
+                    
+                    # Classify common SSH/connection errors
+                    if "permission denied" in error_str or "authentication failed" in error_str:
+                        error_type = "authentication_failed"
+                        error_details["reason"] = "Permission denied - invalid credentials or SSH key not accepted"
+                        error_details["suggestion"] = "Check username/password or ensure SSH key is correctly installed"
+                    elif "connection refused" in error_str:
+                        error_type = "connection_refused"
+                        error_details["reason"] = "Connection refused - SSH service may not be running"
+                        error_details["suggestion"] = "Verify SSH is running on the target and port 22 is open"
+                    elif "no route to host" in error_str or "network unreachable" in error_str:
+                        error_type = "network_unreachable"
+                        error_details["reason"] = "Network unreachable - cannot reach the target host"
+                        error_details["suggestion"] = "Check network connectivity and firewall rules"
+                    elif "timed out" in error_str or "timeout" in error_str:
+                        error_type = "connection_timeout"
+                        error_details["reason"] = "Connection timed out - host not responding"
+                        error_details["suggestion"] = "Verify the host is online and not blocked by firewall"
+                    elif "host key" in error_str:
+                        error_type = "host_key_error"
+                        error_details["reason"] = "Host key verification failed"
+                        error_details["suggestion"] = "Accept the host key or update known_hosts"
+                    elif "password expired" in error_str:
+                        error_type = "password_expired"
+                        error_details["reason"] = "Password has expired"
+                        error_details["suggestion"] = "Update the password on the target system"
+                    elif "name or service not known" in error_str or "could not resolve" in error_str:
+                        error_type = "dns_resolution_failed"
+                        error_details["reason"] = "Could not resolve hostname"
+                        error_details["suggestion"] = "Verify the hostname or use IP address instead"
+                    
+                    error_details["error_type"] = error_type
+                    
+                    # Emit detailed error event with structured data for LLM/report consumption
+                    await queue.put({
+                        "type": "node_error", 
+                        "message": generate_execution_narrative('failed', {'error': str(e), 'node': node_name}),
+                        "node": node_name,
+                        "error_type": error_type,
+                        "error_details": error_details,
+                        "status": "failed"
+                    })
+                    # NOTE: We do NOT re-raise the exception, allowing sequential execution to continue to next node
 
             # Start processing
             tasks = []
@@ -794,7 +936,7 @@ async def stream_execution(execution_id: int):
                     # Handle Incident DB saving 'out of band' here if strictly necessary, 
                     # but for simplicity we stream it.
                     # Update timeline for persistence
-                    if event.get("type") == "step":
+                    if event.get("type") in ["step", "node_error", "incident"]:
                          timeline.append(event)
                          # Consider persisting timeline to DB periodically or at end
                     

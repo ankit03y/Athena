@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, Clock, Edit3, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Play, Clock, Pencil, ChevronDown, ChevronUp, Loader2, Server, Terminal, Zap, Copy, Check } from 'lucide-react';
 
 interface NodeConfig {
     name: string;
@@ -18,7 +18,6 @@ interface Rule {
     commands: CommandConfig[];
     execution?: string;
     schedule?: string;
-    // Legacy support
     command?: string;
     extraction_hint?: string;
     condition?: string;
@@ -35,96 +34,242 @@ interface RuleCardProps {
 
 export function RuleCard({ rule, ruleId, onExecute, onEdit, isExecuting }: RuleCardProps) {
     const [expanded, setExpanded] = useState(true);
+    const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
-    // Normalize data
     const nodes = rule.nodes || [];
     const commands = rule.commands || (rule.command ? [{ cmd: rule.command, logic: rule.extraction_hint || '' }] : []);
 
+    const copyCommand = async (cmd: string, idx: number) => {
+        try {
+            await navigator.clipboard.writeText(cmd);
+            setCopiedIdx(idx);
+            setTimeout(() => setCopiedIdx(null), 1500);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    };
+
     return (
-        <div className="card text-white bg-dark border-secondary mb-3">
-            <div className="card-header d-flex justify-content-between align-items-center">
-                <div className="d-flex align-items-center gap-2">
-                    <span className="fs-5">🧩</span>
-                    <h5 className="mb-0">{rule.name || 'Automation Rule'}</h5>
-                    {rule.execution === 'parallel' && (
-                        <span className="badge bg-info text-dark ms-2">Parallel</span>
-                    )}
+        <div
+            className="glass-card animate-fadeInUp"
+            style={{
+                marginBottom: '1rem',
+                overflow: 'hidden'
+            }}
+        >
+            {/* Header */}
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '1rem 1.25rem',
+                    borderBottom: expanded ? '1px solid var(--border-subtle)' : 'none',
+                    cursor: 'pointer'
+                }}
+                onClick={() => setExpanded(!expanded)}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        background: 'linear-gradient(135deg, var(--athena-teal), var(--athena-teal-dark))',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}>
+                        <Zap size={16} color="white" />
+                    </div>
+                    <div>
+                        <h3 style={{
+                            margin: 0,
+                            fontSize: '1rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)'
+                        }}>
+                            {rule.name || 'Automation Rule'}
+                        </h3>
+                        {rule.execution === 'parallel' && (
+                            <span style={{
+                                fontSize: '0.7rem',
+                                color: 'var(--athena-teal-light)',
+                                fontWeight: 500
+                            }}>
+                                Parallel Execution
+                            </span>
+                        )}
+                    </div>
                 </div>
                 <button
-                    onClick={() => setExpanded(!expanded)}
-                    className="btn btn-sm btn-outline-secondary border-0"
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        padding: '0.25rem'
+                    }}
                 >
-                    {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
             </div>
 
+            {/* Body */}
             {expanded && (
-                <div className="card-body">
-                    {/* Nodes Section */}
-                    <div className="mb-3">
-                        <h6 className="card-subtitle mb-2 text-muted">📍 Target Nodes ({nodes.length})</h6>
-                        <div className="d-flex flex-wrap gap-2">
+                <div style={{ padding: '1rem 1.25rem' }}>
+                    {/* Nodes */}
+                    <div style={{ marginBottom: '1rem' }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            marginBottom: '0.5rem',
+                            color: 'var(--text-muted)',
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                        }}>
+                            <Server size={12} />
+                            Target Nodes ({nodes.length})
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
                             {nodes.map((node, idx) => (
-                                <span key={idx} className="badge bg-secondary p-2">
-                                    <i className="bi bi-hdd-network me-1"></i>
+                                <span
+                                    key={idx}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '0.25rem 0.625rem',
+                                        borderRadius: '5px',
+                                        background: 'rgba(8, 145, 178, 0.15)',
+                                        border: '1px solid rgba(8, 145, 178, 0.3)',
+                                        fontSize: '0.75rem',
+                                        color: 'var(--athena-teal-light)',
+                                        fontWeight: 500
+                                    }}
+                                >
                                     {node.name || node.hostname}
-                                    {node.auth?.username && <small className="opacity-50 ms-1">({node.auth.username})</small>}
                                 </span>
                             ))}
-                            {nodes.length === 0 && <span className="text-muted small">No nodes specified</span>}
+                            {nodes.length === 0 && (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                                    No nodes specified
+                                </span>
+                            )}
                         </div>
                     </div>
 
-                    {/* Commands Section */}
-                    <div className="mb-3">
-                        <h6 className="card-subtitle mb-2 text-muted">💻 Commands</h6>
-                        <ul className="list-group list-group-flush bg-transparent">
+                    {/* Commands - with scroll if many */}
+                    <div>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            marginBottom: '0.5rem',
+                            color: 'var(--text-muted)',
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                        }}>
+                            <Terminal size={12} />
+                            Commands ({commands.length})
+                        </div>
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.375rem',
+                            maxHeight: '200px',
+                            overflowY: 'auto',
+                            paddingRight: '0.25rem'
+                        }}>
                             {commands.map((cmd, idx) => (
-                                <li key={idx} className="list-group-item bg-transparent text-white border-secondary px-0 py-1">
-                                    <div className="d-flex flex-column">
-                                        <code className="text-success small">{cmd.cmd}</code>
-                                        {cmd.logic && <small className="text-info opacity-75">Logic: {cmd.logic}</small>}
+                                <div
+                                    key={idx}
+                                    style={{
+                                        padding: '0.5rem 0.75rem',
+                                        borderRadius: '6px',
+                                        background: 'rgba(0, 0, 0, 0.2)',
+                                        border: '1px solid var(--border-subtle)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem'
+                                    }}
+                                >
+                                    <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem' }}>
+                                        <code style={{
+                                            color: 'var(--success)',
+                                            fontSize: '0.8125rem',
+                                            fontFamily: "'SF Mono', 'Consolas', monospace"
+                                        }}>
+                                            {cmd.cmd}
+                                        </code>
+                                        {cmd.logic && (
+                                            <span style={{
+                                                fontSize: '0.75rem',
+                                                color: 'var(--athena-gold)',
+                                                opacity: 0.9
+                                            }}>
+                                                — {cmd.logic}
+                                            </span>
+                                        )}
                                     </div>
-                                </li>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); copyCommand(cmd.cmd, idx); }}
+                                        title="Copy command"
+                                        style={{
+                                            background: 'transparent',
+                                            border: 'none',
+                                            padding: '0.25rem',
+                                            cursor: 'pointer',
+                                            color: copiedIdx === idx ? 'var(--success)' : 'var(--text-muted)',
+                                            display: 'flex',
+                                            transition: 'color 0.2s'
+                                        }}
+                                    >
+                                        {copiedIdx === idx ? <Check size={14} /> : <Copy size={14} />}
+                                    </button>
+                                </div>
                             ))}
-                        </ul>
-                    </div>
-
-                    {/* Conditions & Actions (if legacy or explicit) */}
-                    {(rule.condition || rule.action) && (
-                        <div className="row g-2 mb-3">
-                            {rule.condition && (
-                                <div className="col-md-6">
-                                    <div className="p-2 border border-warning rounded">
-                                        <small className="text-warning d-block">⚖️ Condition</small>
-                                        <span>{rule.condition}</span>
-                                    </div>
-                                </div>
-                            )}
-                            {rule.action && (
-                                <div className="col-md-6">
-                                    <div className="p-2 border border-danger rounded">
-                                        <small className="text-danger d-block">⚡ Action</small>
-                                        <span>{rule.action}</span>
-                                    </div>
-                                </div>
-                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
             )}
 
-            <div className="card-footer border-secondary d-flex gap-2">
+            {/* Footer Actions */}
+            <div style={{
+                display: 'flex',
+                gap: '0.75rem',
+                padding: '1rem 1.25rem',
+                borderTop: '1px solid var(--border-subtle)',
+                background: 'rgba(0, 0, 0, 0.15)'
+            }}>
                 <button
-                    onClick={() => onEdit?.(ruleId)}
-                    className="btn btn-sm btn-outline-light d-flex align-items-center gap-2"
+                    onClick={(e) => { e.stopPropagation(); onEdit?.(ruleId); }}
+                    className="btn-ghost"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.5rem 1rem',
+                        fontSize: '0.8125rem'
+                    }}
                 >
-                    <Edit3 size={14} /> Edit
+                    <Pencil size={14} /> Edit
                 </button>
                 <button
-                    onClick={() => onExecute(ruleId)}
+                    onClick={(e) => { e.stopPropagation(); onExecute(ruleId); }}
                     disabled={isExecuting}
-                    className="btn btn-sm btn-success d-flex align-items-center gap-2"
+                    className="btn-gold"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.5rem 1rem',
+                        fontSize: '0.8125rem',
+                        opacity: isExecuting ? 0.6 : 1
+                    }}
                 >
                     {isExecuting ? (
                         <>
@@ -136,10 +281,21 @@ export function RuleCard({ rule, ruleId, onExecute, onEdit, isExecuting }: RuleC
                         </>
                     )}
                 </button>
-                <button className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 ms-auto">
+                <button
+                    className="btn-ghost"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.5rem 1rem',
+                        fontSize: '0.8125rem',
+                        marginLeft: 'auto'
+                    }}
+                >
                     <Clock size={14} /> Schedule
                 </button>
             </div>
         </div>
     );
 }
+

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Plus, LayoutGrid, MoreVertical, Pencil, Trash2, MessageSquare } from 'lucide-react';
 
 interface Session {
     id: number;
@@ -15,11 +16,30 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ onSelectSession, currentSessionId, currentView, onSelectView }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
+    const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editTitle, setEditTitle] = useState('');
     const [deletingId, setDeletingId] = useState<number | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         fetchSessions();
-    }, [currentSessionId]); // Refetch when session changes (e.g. new session created)
+    }, [currentSessionId]);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            // Don't close if clicking on a three-dot button
+            if (target.closest('.three-dot-btn')) {
+                return;
+            }
+            if (menuRef.current && !menuRef.current.contains(target)) {
+                setMenuOpenId(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const fetchSessions = async () => {
         try {
@@ -33,18 +53,14 @@ const Sidebar: React.FC<SidebarProps> = ({ onSelectSession, currentSessionId, cu
         }
     };
 
-    const handleDeleteSession = async (sessionId: number, e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent selecting the session
-        if (!window.confirm('Are you sure you want to delete this chat thread?')) {
-            return;
-        }
+    const handleDeleteSession = async (sessionId: number) => {
         setDeletingId(sessionId);
+        setMenuOpenId(null);
         try {
             const res = await fetch(`http://localhost:8000/chat/sessions/${sessionId}`, {
                 method: 'DELETE'
             });
             if (res.ok) {
-                // If we deleted the current session, clear selection
                 if (currentSessionId === sessionId) {
                     onSelectSession(null);
                 }
@@ -57,69 +73,262 @@ const Sidebar: React.FC<SidebarProps> = ({ onSelectSession, currentSessionId, cu
         }
     };
 
+    const handleRenameSession = async (sessionId: number) => {
+        if (!editTitle.trim()) return;
+        try {
+            const res = await fetch(`http://localhost:8000/chat/sessions/${sessionId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: editTitle })
+            });
+            if (res.ok) {
+                fetchSessions();
+            }
+        } catch (error) {
+            console.error("Failed to rename session", error);
+        } finally {
+            setEditingId(null);
+            setEditTitle('');
+        }
+    };
+
+    const startEditing = (session: Session) => {
+        setEditingId(session.id);
+        setEditTitle(session.title);
+        setMenuOpenId(null);
+    };
+
     return (
-        <div className="d-flex flex-column flex-shrink-0 p-3 text-white bg-dark" style={{ width: '100%', height: '100%', borderRight: '1px solid #333', overflow: 'hidden' }}>
-            <a href="/" className="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
-                <i className="bi bi-robot fs-4 me-2"></i>
-                <span className="fs-4">Athena Agent</span>
-            </a>
-            <hr />
+        <div
+            className="glass"
+            style={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                padding: '1.25rem',
+                borderRadius: 0,
+                borderRight: '1px solid var(--border-subtle)',
+                borderLeft: 'none',
+                borderTop: 'none',
+                borderBottom: 'none'
+            }}
+        >
+            {/* Logo */}
+            <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    {/* Athena Logo */}
+                    <img
+                        src="/athena-logo.png"
+                        alt="Athena"
+                        style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '10px',
+                            objectFit: 'cover'
+                        }}
+                    />
+                    <div>
+                        <div className="text-caps" style={{ marginBottom: '2px' }}>Welcome to</div>
+                        <div style={{
+                            fontSize: '1.125rem',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)'
+                        }}>
+                            Athena Agent
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Action Buttons */}
             <button
-                className="btn btn-primary w-100 mb-2"
+                className="btn-athena"
+                style={{
+                    width: '100%',
+                    marginBottom: '0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem'
+                }}
                 onClick={() => {
                     onSelectSession(null);
                     onSelectView?.('chat');
                 }}
             >
-                <i className="bi bi-plus-lg me-2"></i>
+                <Plus size={18} />
                 New Chat
             </button>
+
             <button
-                className={`btn w-100 mb-3 ${currentView === 'history' ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                className="btn-ghost"
+                style={{
+                    width: '100%',
+                    marginBottom: '1.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    background: currentView === 'history' ? 'var(--bg-card)' : 'transparent'
+                }}
                 onClick={() => onSelectView?.('history')}
             >
-                <i className="bi bi-grid-3x3 me-2"></i>
+                <LayoutGrid size={16} />
                 Dashboard
             </button>
 
-            <div className="list-group list-group-flush overflow-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+            {/* Sessions Label */}
+            <div className="text-caps" style={{ marginBottom: '0.75rem', paddingLeft: '0.5rem' }}>
+                Recent Chats
+            </div>
+
+            {/* Sessions List */}
+            <div style={{ flex: 1, overflow: 'auto', marginRight: '-0.5rem', paddingRight: '0.5rem' }}>
                 {sessions.map(session => (
                     <div
                         key={session.id}
-                        className={`list-group-item list-group-item-action py-3 lh-sm d-flex justify-content-between align-items-start ${currentSessionId === session.id ? 'active' : 'bg-dark text-white border-bottom-0'}`}
+                        className={`sidebar-item ${currentSessionId === session.id ? 'active' : ''}`}
                         onClick={() => {
-                            onSelectSession(session.id);
-                            onSelectView?.('chat');
+                            if (editingId !== session.id) {
+                                onSelectSession(session.id);
+                                onSelectView?.('chat');
+                            }
                         }}
-                        style={currentSessionId === session.id ? { cursor: 'pointer' } : { borderColor: '#444', cursor: 'pointer' }}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginBottom: '0.25rem',
+                            position: 'relative'
+                        }}
                     >
-                        <div className="flex-grow-1 overflow-hidden">
-                            <strong className="mb-1 text-truncate d-block">{session.title}</strong>
-                            <div className="small opacity-50">
-                                {new Date(session.created_at).toLocaleDateString()}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+                            <MessageSquare size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                {editingId === session.id ? (
+                                    <input
+                                        type="text"
+                                        className="input-athena"
+                                        style={{
+                                            padding: '0.375rem 0.5rem',
+                                            fontSize: '0.875rem',
+                                            width: '100%'
+                                        }}
+                                        value={editTitle}
+                                        onChange={(e) => setEditTitle(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleRenameSession(session.id);
+                                            if (e.key === 'Escape') { setEditingId(null); setEditTitle(''); }
+                                        }}
+                                        onBlur={() => handleRenameSession(session.id)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        autoFocus
+                                    />
+                                ) : (
+                                    <>
+                                        <div style={{
+                                            fontSize: '0.875rem',
+                                            fontWeight: 500,
+                                            color: 'var(--text-primary)',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis'
+                                        }}>
+                                            {session.title}
+                                        </div>
+                                        <div style={{
+                                            fontSize: '0.75rem',
+                                            color: 'var(--text-muted)',
+                                            marginTop: '2px'
+                                        }}>
+                                            {new Date(session.created_at).toLocaleDateString()}
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
-                        <button
-                            className={`btn btn-sm ${currentSessionId === session.id ? 'btn-outline-light' : 'btn-outline-danger'} ms-2`}
-                            onClick={(e) => handleDeleteSession(session.id, e)}
-                            disabled={deletingId === session.id}
-                            title="Delete chat"
-                        >
-                            {deletingId === session.id ? (
-                                <span className="spinner-border spinner-border-sm" role="status"></span>
-                            ) : (
-                                <i className="bi bi-trash"></i>
-                            )}
-                        </button>
+
+                        {/* Three Dot Menu */}
+                        {editingId !== session.id && (
+                            <button
+                                className="three-dot-btn"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMenuOpenId(menuOpenId === session.id ? null : session.id);
+                                }}
+                                style={{ opacity: menuOpenId === session.id ? 1 : undefined }}
+                            >
+                                <MoreVertical size={16} />
+                            </button>
+                        )}
+
+                        {/* Dropdown Menu */}
+                        {menuOpenId === session.id && (
+                            <div
+                                ref={menuRef}
+                                className="dropdown-menu"
+                                style={{
+                                    position: 'absolute',
+                                    top: 'calc(100% + 4px)',
+                                    right: '0',
+                                    zIndex: 9999
+                                }}
+                            >
+                                <div
+                                    className="dropdown-item"
+                                    onClick={(e) => { e.stopPropagation(); startEditing(session); }}
+                                >
+                                    <Pencil size={14} />
+                                    Rename
+                                </div>
+                                <div
+                                    className="dropdown-item danger"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (window.confirm('Delete this chat?')) {
+                                            handleDeleteSession(session.id);
+                                        }
+                                    }}
+                                >
+                                    <Trash2 size={14} />
+                                    {deletingId === session.id ? 'Deleting...' : 'Delete'}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
 
-            <div className="mt-auto">
-                <hr />
-                <div className="d-flex align-items-center text-white text-decoration-none" >
-                    <img src="https://github.com/mdo.png" alt="" width="32" height="32" className="rounded-circle me-2" />
-                    <strong>User</strong>
+            {/* Footer */}
+            <div style={{
+                marginTop: 'auto',
+                paddingTop: '1rem',
+                borderTop: '1px solid var(--border-subtle)'
+            }}>
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.5rem'
+                }}>
+                    <div style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        background: 'linear-gradient(135deg, var(--athena-teal-dark), var(--athena-teal))',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontSize: '0.875rem',
+                        fontWeight: 600
+                    }}>
+                        U
+                    </div>
+                    <div>
+                        <div style={{ fontSize: '0.875rem', fontWeight: 500 }}>User</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Local</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -127,4 +336,3 @@ const Sidebar: React.FC<SidebarProps> = ({ onSelectSession, currentSessionId, cu
 };
 
 export default Sidebar;
-

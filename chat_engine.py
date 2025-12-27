@@ -260,20 +260,29 @@ def analyze_output_with_llm(output: str, extraction_hint: str, condition: str) -
     """
     Use LLM to analyze command output and check conditions.
     """
+    # Determine if there's an actual condition to check
+    has_alert_condition = condition and condition.lower() not in ["report output", "check for errors", "none", ""]
+    
     prompt = f"""Analyze this command output and extract the relevant metric.
 
 Output:
 {output}
 
 Extraction hint: {extraction_hint}
-Condition to check: {condition}
+Condition to check: {condition if has_alert_condition else "None - just report the output"}
+
+IMPORTANT RULES:
+1. Set "condition_met: true" ONLY if there is an ACTUAL PROBLEM detected (e.g., high load >1.0, disk usage >80%, errors, failures)
+2. Set "condition_met: false" for normal/healthy output (e.g., low load average, no errors, healthy status)
+3. A load average of 0.00 or low values are HEALTHY - this should be condition_met: false
+4. If no specific condition was provided, just report the output and set condition_met: false
 
 Respond in JSON:
 {{
   "extracted_value": "the value found",
-  "condition_met": true/false,
+  "condition_met": true/false (true ONLY if there's a real problem),
   "summary": "one line human readable summary",
-  "severity": "info" | "warning" | "critical"
+  "severity": "info" (normal) | "warning" (needs attention) | "critical" (urgent problem)
 }}"""
 
     try:
